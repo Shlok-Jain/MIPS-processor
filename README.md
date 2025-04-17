@@ -2,7 +2,7 @@
 This repository contains a MIPS-like processor implementation in Verilog as part of the CS220 Computer Organization course.
 
 ## Author
-Shlok Jain (230493)
+Shlok Jain (230493) <br>
 Indian Institute of Technology, Kanpur
 
 ## Project Structure
