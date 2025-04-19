@@ -3,6 +3,7 @@ This repository contains a MIPS-like processor implementation in Verilog as part
 
 ## Author
 Shlok Jain (230493) <br>
+Akash Verma (220097) <br>
 Indian Institute of Technology, Kanpur
 
 ## Project Structure
@@ -42,3 +43,46 @@ The processor implements a custom instruction set with:
 
 ## Testbench
 The included testbench demonstrates an insertion sort implementation using the processor instructions.
+
+## Instruction Encoding
+
+The processor uses a 32-bit instruction format with the following fields:
+
+```
+31      26 25    21 20    16 15    11 10     6 5       0
++--------+---------+--------+--------+--------+--------+
+| opcode |    rd   |   rs   |   rt   | shamt  |  func  |  R-type
++--------+---------+--------+--------+--------+--------+
+
+31      26 25    21 20    16 15                        0
++--------+---------+--------+------------------------+
+| opcode |    rt   |   rs   |       immediate        |  I-type
++--------+---------+--------+------------------------+
+
+31      26 25                                         0
++--------+--------------------------------------------+
+| opcode |                   address                  |  J-type
++--------+--------------------------------------------+
+```
+
+### Common Opcodes
+- **000000 (0)**: R-type instructions (functionality determined by func field)
+- **000001 (1)**: addi (add immediate)
+- **000111 (7)**: lw (load word)
+- **001000 (8)**: sw (store word)
+- **001001 (9)**: slti (set less than immediate)
+- **001010 (10)**: seq (set equal)
+- **010000-010101 (16-21)**: Branch instructions (beq, bne, bgt, bgte, ble, bleq)
+- **011000-011010 (24-26)**: Jump instructions (j, jr, jal)
+- **100000-101001 (32-41)**: Floating-point operations (mfc1, mtc1, add.s, sub.s, etc.)
+
+### Function Codes (for R-type)
+- **000000 (0)**: add
+- **000001 (1)**: sub
+- **000010 (2)**: and
+- **000100 (4)**: or
+- **001000 (8)**: slt (set less than)
+- **001001 (9)**: sll (shift left logical)
+- **001100 (12)**: mult (multiply)
+
+The custom implementation includes support for both integer and floating-point operations with dedicated functional units.
