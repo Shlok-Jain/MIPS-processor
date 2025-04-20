@@ -4,6 +4,8 @@ This repository contains a MIPS-like processor implementation in Verilog as part
 ## Author
 Shlok Jain (230493) <br>
 Akash Verma (220097) <br>
+Team 10 <br>
+Course: CS220 Computer Organization, Sem 24-25 even <br>
 Indian Institute of Technology, Kanpur
 
 ## Project Structure
