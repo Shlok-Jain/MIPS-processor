@@ -1,19 +1,54 @@
 // Code your design here
 `timescale 1ns / 1ps
 
-module DistributedMemory (
- input wire [9:0] addr_in, input wire[9:0] read_addr , input write_enable , input clk ,
- input wire [31 : 0] data_in , output wire [31 : 0] data_out
+module ProgramCounter (
+ input clk , output reg [9:0] counter_val, input reset , input jump_enable , input [25:0] jump_addr , input branch_enable , input [15:0] branch_offset
 );
-    reg [31:0] mem_cells [1023:0];
-    assign data_out = mem_cells[read_addr];
-    always @(negedge clk) begin
-        if(write_enable) begin
-            mem_cells[addr_in] = data_in;
+    always @(posedge clk ) begin
+        if(reset) begin
+            counter_val = 0;
         end
         else begin
-            mem_cells[addr_in] = mem_cells[addr_in];
+            if(jump_enable) begin
+                counter_val = jump_addr[9:0];
+            end
+            else if(branch_enable) begin
+                counter_val = counter_val + 1 + branch_offset;
+            end
+            else begin
+                counter_val = counter_val + 1;
+            end
         end
+    end
+endmodule
+
+module ArithLogicUnit (
+ input wire [31:0] val1, input wire [31:0] val2 , input wire [4:0] op_select , input wire clk ,
+ output reg [31:0] result , input wire [4:0] shift_amount
+);
+    wire[63:0] mult_result;
+    assign mult_result = $signed(val1) * $signed(val2);
+    always @(val1 or val2 or op_select or shift_amount or mult_result) begin
+        case (op_select)
+            0: result = val1 + val2;
+            1: result = val1 - val2;
+            2: result = val1 & val2;
+            3: result = val1 ^ val2;
+            4: result = val1 | val2;
+            5: result = ~val1;
+            6: result = val1 << shift_amount;
+            7: result = val1 >> shift_amount;
+            8: result = ($signed(val1) != $signed(val2));
+            9: result = ($signed(val1) == $signed(val2));
+            10: result = ($signed(val1) < $signed(val2));
+            11: result = ($signed(val1) <= $signed(val2));
+            12: result = ($signed(val1) > $signed(val2));
+            13: result = ($signed(val1) >= $signed(val2));
+            14: result = val2 << 16;
+            15: result = mult_result[31:0];
+            16: result = mult_result[63:32];
+            default: result = 32'b0;
+        endcase
     end
 endmodule
 
@@ -42,6 +77,153 @@ module RegBank (
     end
 endmodule
 
+module ControlUnit (
+ input clk , input wire [5:0] op_type , output reg reg_write , output reg mem_write ,
+ output reg imm_sel , output reg jump_en, output reg branch_en , output reg link_en , output reg select_src,
+ input reset , output reg move_fp_to_cpu
+);
+  always @(op_type or reset) begin
+    if(reset) begin
+      imm_sel = 0;
+      jump_en = 0;
+      branch_en = 0;
+      select_src = 0;
+      mem_write = 0;
+      reg_write = 0;
+      link_en = 0;
+      move_fp_to_cpu = 0;
+    end
+    else if(op_type == 0) begin // Rtype instruction
+      mem_write = 0;
+      reg_write = 1;
+      imm_sel = 0;
+      select_src = 0;
+      branch_en = 0;
+      jump_en = 0;
+      link_en = 0;
+      move_fp_to_cpu = 0;
+    end
+    else if(op_type == 1 ||op_type == 2 ||op_type == 3 ||op_type == 4 ||op_type == 5) begin //addi, andi , xori, ori , addiu
+      mem_write = 0;
+      reg_write = 1;
+      imm_sel = 1;
+      select_src = 0;
+      branch_en = 0;
+      jump_en = 0;
+      link_en = 0;
+      move_fp_to_cpu = 0;
+    end
+    else if(op_type == 7) begin // lw
+      reg_write = 1;
+      mem_write = 0;
+      imm_sel = 1;
+      select_src = 1;
+      branch_en = 0;
+      jump_en = 0;
+      link_en = 0;
+      move_fp_to_cpu = 0;
+    end
+    else if(op_type == 8) begin // sw
+      reg_write = 0;
+      mem_write = 1;
+      imm_sel = 1;
+      select_src = 0;
+      branch_en = 0;
+      jump_en = 0;
+      link_en = 0;
+      move_fp_to_cpu = 0;
+    end
+    else if(op_type == 9 || op_type == 10) begin // slti , seq
+      reg_write = 1;
+      mem_write = 0;
+      imm_sel = 1;
+      select_src = 0;
+      branch_en = 0;
+      jump_en = 0;
+      link_en = 0;
+      move_fp_to_cpu = 0;
+    end
+    else if(op_type == 6'b001011) begin //lui
+      reg_write = 1;
+      mem_write = 0;
+      imm_sel = 1;
+      select_src = 0;
+      branch_en = 0;
+      jump_en = 0;
+      link_en = 0;
+      move_fp_to_cpu = 0;
+    end
+    else if(op_type == 16 || op_type == 17 ||op_type == 18 || op_type == 19 || op_type == 20 || op_type == 21 || op_type == 22 || op_type == 23) begin //all branches
+      reg_write = 0;
+      mem_write = 0;
+      imm_sel = 0;
+      select_src = 0;
+      branch_en = 1;
+      jump_en = 0;
+      link_en = 0;
+      move_fp_to_cpu = 0;
+    end
+    else if(op_type == 6'b011000 || op_type == 6'b011001) begin // All jump except jal
+      reg_write = 0;
+      mem_write = 0;
+      imm_sel = 0;
+      select_src = 0;
+      branch_en = 0;
+      jump_en = 1;
+      link_en = 0;
+      move_fp_to_cpu = 0;
+    end
+    else if(op_type == 6'b011010) begin // jal handled separately
+      reg_write = 1;
+      mem_write = 0;
+      imm_sel = 0;
+      select_src = 0;
+      branch_en = 0;
+      jump_en = 1;
+      link_en = 1;
+      move_fp_to_cpu = 0;
+    end
+    else if(op_type == 6'b100000) begin//mfc1
+      reg_write = 1;
+      mem_write = 0;
+      imm_sel = 0;
+      select_src = 0;
+      branch_en = 0;
+      jump_en = 0;
+      link_en = 0;
+      move_fp_to_cpu = 1;
+    end
+    else begin
+      reg_write = 0;
+      mem_write = 0;
+      imm_sel = 0;
+      select_src = 0;
+      branch_en = 0;
+      jump_en = 0;
+      link_en = 0;
+      move_fp_to_cpu = 0;
+    end
+  end
+endmodule
+
+module DistributedMemory (
+ input wire [9:0] addr_in, input wire[9:0] read_addr , input write_enable , input clk ,
+ input wire [31 : 0] data_in , output wire [31 : 0] data_out
+);
+    reg [31:0] mem_cells [1023:0];
+    assign data_out = mem_cells[read_addr];
+    always @(negedge clk) begin
+        if(write_enable) begin
+            mem_cells[addr_in] = data_in;
+        end
+        else begin
+            mem_cells[addr_in] = mem_cells[addr_in];
+        end
+    end
+endmodule
+
+
+
 module InstructionParser (
  input wire [31:0] instr, output wire [4:0] field1 , output wire [4:0] field2 , output wire [4:0] field3 ,
  output wire [5:0] opcode , output wire [4:0] shift_amt , output wire [5:0] op_type , output wire [15:0] imm_value,
@@ -56,48 +238,42 @@ module InstructionParser (
     assign imm_value = instr[15:0];
     assign jump_target = instr[25:0];
 endmodule
-/*
-op_select = 0 => ADD
-1 == Sub (val1 - val2) == src1 - src2
-2 == and
-3 == xor
-4 == or
-5 == not
-6 == left shift
-7 == right shift
-8 == set not equal
-9 == set equal
-10 == set less than
-11 == set less than equal
-12 == set greater than
-13 == set greater than equal
-*/
-module ArithLogicUnit (
- input wire [31:0] val1, input wire [31:0] val2 , input wire [4:0] op_select , input wire clk ,
- output reg [31:0] result , input wire [4:0] shift_amount
+
+
+//Put src_reg2 into val1
+module FloatingPointUnit (
+    input wire [31:0] val1, input wire [31:0] val2, output reg [31:0] fp_result,
+    input wire [5:0] op_type, output reg condition_flag
 );
-    wire[63:0] mult_result;
-    assign mult_result = $signed(val1) * $signed(val2);
-    always @(val1 or val2 or op_select or shift_amount or mult_result) begin
-        case (op_select)
-            0: result = val1 + val2;
-            1: result = val1 - val2;
-            2: result = val1 & val2;
-            3: result = val1 ^ val2;
-            4: result = val1 | val2;
-            5: result = ~val1;
-            6: result = val1 << shift_amount;
-            7: result = val1 >> shift_amount;
-            8: result = ($signed(val1) != $signed(val2));
-            9: result = ($signed(val1) == $signed(val2));
-            10: result = ($signed(val1) < $signed(val2));
-            11: result = ($signed(val1) <= $signed(val2));
-            12: result = ($signed(val1) > $signed(val2));
-            13: result = ($signed(val1) >= $signed(val2));
-            14: result = val2 << 16;
-            15: result = mult_result[31:0];
-            16: result = mult_result[63:32];
-            default: result = 32'b0;
+    wire [31:0] adder_result;
+    wire flip_enable;
+    assign flip_enable = (op_type == 6'b100011) || (op_type == 6'b100100) || 
+                   (op_type == 6'b100101) || 
+                   (op_type == 6'b100110) || 
+                   (op_type == 6'b100111) || 
+                   (op_type == 6'b101000);
+                   
+    wire [31:0] mod_val2;
+    SignFlipper sign_modifier(.flip_enable(flip_enable), .input_val(val2), .output_val(mod_val2));
+    FloatingPointAdder fp_adder(.operand1(val1), .operand2(mod_val2), .result(adder_result));
+    
+    wire is_zero_result;
+    assign is_zero_result = (adder_result[30:0] == 31'b0);
+
+    always @(val1 or val2 or op_type or adder_result or is_zero_result) begin
+        case (op_type)
+            6'b100010: fp_result = adder_result; // add.s
+            6'b100011: fp_result = adder_result; // sub.s
+            
+            // Comparison operations
+            6'b100100: condition_flag = is_zero_result;
+            6'b100101: condition_flag = adder_result[31] || is_zero_result;
+            6'b100110: condition_flag = adder_result[31] && !is_zero_result;
+            6'b100111: condition_flag = !adder_result[31] || is_zero_result;
+            6'b101000: condition_flag = !adder_result[31] && !is_zero_result;
+            
+            6'b101001: fp_result = val1; // mov.s.cc
+            default: fp_result = fp_result;
         endcase
     end
 endmodule
@@ -259,64 +435,9 @@ module SignFlipper (
     assign output_val = (flip_enable)? input_val ^ 32'h80000000 : input_val;
 endmodule
 
-//Put src_reg2 into val1
-module FloatingPointUnit (
-    input wire [31:0] val1, input wire [31:0] val2, output reg [31:0] fp_result,
-    input wire [5:0] op_type, output reg condition_flag
-);
-    wire [31:0] adder_result;
-    wire flip_enable;
-    assign flip_enable = (op_type == 6'b100011) || (op_type == 6'b100100) || 
-                   (op_type == 6'b100101) || 
-                   (op_type == 6'b100110) || 
-                   (op_type == 6'b100111) || 
-                   (op_type == 6'b101000);
-                   
-    wire [31:0] mod_val2;
-    SignFlipper sign_modifier(.flip_enable(flip_enable), .input_val(val2), .output_val(mod_val2));
-    FloatingPointAdder fp_adder(.operand1(val1), .operand2(mod_val2), .result(adder_result));
-    
-    wire is_zero_result;
-    assign is_zero_result = (adder_result[30:0] == 31'b0);
 
-    always @(val1 or val2 or op_type or adder_result or is_zero_result) begin
-        case (op_type)
-            6'b100010: fp_result = adder_result; // add.s
-            6'b100011: fp_result = adder_result; // sub.s
-            
-            // Comparison operations
-            6'b100100: condition_flag = is_zero_result;
-            6'b100101: condition_flag = adder_result[31] || is_zero_result;
-            6'b100110: condition_flag = adder_result[31] && !is_zero_result;
-            6'b100111: condition_flag = !adder_result[31] || is_zero_result;
-            6'b101000: condition_flag = !adder_result[31] && !is_zero_result;
-            
-            6'b101001: fp_result = val1; // mov.s.cc
-            default: fp_result = fp_result;
-        endcase
-    end
-endmodule
 
-module ProgramCounter (
- input clk , output reg [9:0] counter_val, input reset , input jump_enable , input [25:0] jump_addr , input branch_enable , input [15:0] branch_offset
-);
-    always @(posedge clk ) begin
-        if(reset) begin
-            counter_val = 0;
-        end
-        else begin
-            if(jump_enable) begin
-                counter_val = jump_addr[9:0];
-            end
-            else if(branch_enable) begin
-                counter_val = counter_val + 1 + branch_offset;
-            end
-            else begin
-                counter_val = counter_val + 1;
-            end
-        end
-    end
-endmodule
+
 
 module OperationSelector (
  input wire [5:0] op_type , input wire[5:0] opcode , output reg [4:0] op_select
@@ -401,134 +522,7 @@ module Selector #(
  assign out_val = (sel)? in0 : in1;
 endmodule
 
-module ControlUnit (
- input clk , input wire [5:0] op_type , output reg reg_write , output reg mem_write ,
- output reg imm_sel , output reg jump_en, output reg branch_en , output reg link_en , output reg select_src,
- input reset , output reg move_fp_to_cpu
-);
-  always @(op_type or reset) begin
-    if(reset) begin
-      imm_sel = 0;
-      jump_en = 0;
-      branch_en = 0;
-      select_src = 0;
-      mem_write = 0;
-      reg_write = 0;
-      link_en = 0;
-      move_fp_to_cpu = 0;
-    end
-    else if(op_type == 0) begin // Rtype instruction
-      mem_write = 0;
-      reg_write = 1;
-      imm_sel = 0;
-      select_src = 0;
-      branch_en = 0;
-      jump_en = 0;
-      link_en = 0;
-      move_fp_to_cpu = 0;
-    end
-    else if(op_type == 1 ||op_type == 2 ||op_type == 3 ||op_type == 4 ||op_type == 5) begin //addi, andi , xori, ori , addiu
-      mem_write = 0;
-      reg_write = 1;
-      imm_sel = 1;
-      select_src = 0;
-      branch_en = 0;
-      jump_en = 0;
-      link_en = 0;
-      move_fp_to_cpu = 0;
-    end
-    else if(op_type == 7) begin // lw
-      reg_write = 1;
-      mem_write = 0;
-      imm_sel = 1;
-      select_src = 1;
-      branch_en = 0;
-      jump_en = 0;
-      link_en = 0;
-      move_fp_to_cpu = 0;
-    end
-    else if(op_type == 8) begin // sw
-      reg_write = 0;
-      mem_write = 1;
-      imm_sel = 1;
-      select_src = 0;
-      branch_en = 0;
-      jump_en = 0;
-      link_en = 0;
-      move_fp_to_cpu = 0;
-    end
-    else if(op_type == 9 || op_type == 10) begin // slti , seq
-      reg_write = 1;
-      mem_write = 0;
-      imm_sel = 1;
-      select_src = 0;
-      branch_en = 0;
-      jump_en = 0;
-      link_en = 0;
-      move_fp_to_cpu = 0;
-    end
-    else if(op_type == 6'b001011) begin //lui
-      reg_write = 1;
-      mem_write = 0;
-      imm_sel = 1;
-      select_src = 0;
-      branch_en = 0;
-      jump_en = 0;
-      link_en = 0;
-      move_fp_to_cpu = 0;
-    end
-    else if(op_type == 16 || op_type == 17 ||op_type == 18 || op_type == 19 || op_type == 20 || op_type == 21 || op_type == 22 || op_type == 23) begin //all branches
-      reg_write = 0;
-      mem_write = 0;
-      imm_sel = 0;
-      select_src = 0;
-      branch_en = 1;
-      jump_en = 0;
-      link_en = 0;
-      move_fp_to_cpu = 0;
-    end
-    else if(op_type == 6'b011000 || op_type == 6'b011001) begin // All jump except jal
-      reg_write = 0;
-      mem_write = 0;
-      imm_sel = 0;
-      select_src = 0;
-      branch_en = 0;
-      jump_en = 1;
-      link_en = 0;
-      move_fp_to_cpu = 0;
-    end
-    else if(op_type == 6'b011010) begin // jal handled separately
-      reg_write = 1;
-      mem_write = 0;
-      imm_sel = 0;
-      select_src = 0;
-      branch_en = 0;
-      jump_en = 1;
-      link_en = 1;
-      move_fp_to_cpu = 0;
-    end
-    else if(op_type == 6'b100000) begin//mfc1
-      reg_write = 1;
-      mem_write = 0;
-      imm_sel = 0;
-      select_src = 0;
-      branch_en = 0;
-      jump_en = 0;
-      link_en = 0;
-      move_fp_to_cpu = 1;
-    end
-    else begin
-      reg_write = 0;
-      mem_write = 0;
-      imm_sel = 0;
-      select_src = 0;
-      branch_en = 0;
-      jump_en = 0;
-      link_en = 0;
-      move_fp_to_cpu = 0;
-    end
-  end
-endmodule
+
 
 module FPRegController (
     input [5:0] op_type, output fp_reg_write , output move_cpu_to_fp
@@ -542,45 +536,45 @@ module ProcessorCore (
  input wire [9:0] addr_in , input wire write_instr , input wire write_data_en,
  output wire [31:0] src1_output
 );
- wire [9:0] pc_val;
- wire [31:0] current_instr;
- wire [31:0] alu_result;
- wire [9:0] mem_addr;
- wire [31:0] src2_data , src1_data , mem_write_data , mem_read_data , alu_src2_input, extended_imm , fp_src2_data, fp_src1_data , fp_result , int_converted , float_converted , reg_data_in , fp_reg_data_in;
- wire [4:0] field1 , field2 , field3 , shift_amt;
- wire [5:0] op_type , opcode;
- wire [15:0] imm_value;
- wire [25:0] jump_target;
- wire branch_en , jump_en , link_en , mem_write_en , imm_sel, select_src, reg_write_en, fp_reg_write_en , move_cpu_to_fp , move_fp_to_cpu;
- wire [4:0] src1_addr;
- wire cond_flag;
- wire [4:0] op_select;
- assign src1_output = src1_data;
- assign src1_addr = (branch_en | mem_write_en)? field3 : field2;
- 
- wire[4:0] dest_reg_addr;
- assign dest_reg_addr = (link_en)? 5'd3 : field3;
- wire [31:0] reg_write_data , pre_move_data;
- assign pre_move_data = (link_en)? {22'b0 , pc_val} : reg_write_data;
- assign reg_data_in = (move_fp_to_cpu)? int_converted : pre_move_data;
- assign alu_src2_input = (imm_sel)? extended_imm : src2_data;
- ImmediateExtender imm_extender(.imm_in(imm_value) , .extended_out(extended_imm));
- assign reg_write_data = (select_src)? mem_read_data : alu_result;
- DistributedMemory instr_memory(.addr_in(addr_in), .data_in(instr_data), .read_addr(pc_val), .clk(clk), .write_enable(write_instr), .data_out(current_instr));
+    wire [9:0] pc_val;
+    wire [31:0] current_instr;
+    wire [31:0] alu_result;
+    wire [9:0] mem_addr;
+    wire [31:0] src2_data , src1_data , mem_write_data , mem_read_data , alu_src2_input, extended_imm , fp_src2_data, fp_src1_data , fp_result , int_converted , float_converted , reg_data_in , fp_reg_data_in;
+    wire [4:0] field1 , field2 , field3 , shift_amt;
+    wire [5:0] op_type , opcode;
+    wire [15:0] imm_value;
+    wire [25:0] jump_target;
+    wire branch_en , jump_en , link_en , mem_write_en , imm_sel, select_src, reg_write_en, fp_reg_write_en , move_cpu_to_fp , move_fp_to_cpu;
+    wire [4:0] src1_addr;
+    wire cond_flag;
+    wire [4:0] op_select;
+    assign src1_output = src1_data;
+    assign src1_addr = (branch_en | mem_write_en)? field3 : field2;
+    
+    wire[4:0] dest_reg_addr;
+    assign dest_reg_addr = (link_en)? 5'd3 : field3;
+    wire [31:0] reg_write_data , pre_move_data;
+    assign pre_move_data = (link_en)? {22'b0 , pc_val} : reg_write_data;
+    assign reg_data_in = (move_fp_to_cpu)? int_converted : pre_move_data;
+    assign alu_src2_input = (imm_sel)? extended_imm : src2_data;
+    ImmediateExtender imm_extender(.imm_in(imm_value) , .extended_out(extended_imm));
+    assign reg_write_data = (select_src)? mem_read_data : alu_result;
+    DistributedMemory instr_memory(.addr_in(addr_in), .data_in(instr_data), .read_addr(pc_val), .clk(clk), .write_enable(write_instr), .data_out(current_instr));
 
- assign mem_addr = (write_data_en)? addr_in : alu_result[9:0];
- assign mem_write_data = (write_data_en)? instr_data : src2_data;
- DistributedMemory data_memory(.addr_in(mem_addr) , .data_in(mem_write_data) , .read_addr(alu_result[9:0]) , .clk(clk) , .write_enable(mem_write_en | write_data_en) , .data_out(mem_read_data));
+    assign mem_addr = (write_data_en)? addr_in : alu_result[9:0];
+    assign mem_write_data = (write_data_en)? instr_data : src2_data;
+    DistributedMemory data_memory(.addr_in(mem_addr) , .data_in(mem_write_data) , .read_addr(alu_result[9:0]) , .clk(clk) , .write_enable(mem_write_en | write_data_en) , .data_out(mem_read_data));
 
- InstructionParser decoder(.instr(current_instr) , .field1(field1) , .field2(field2) , .field3(field3) , .shift_amt(shift_amt), .opcode(opcode), .op_type(op_type) , .imm_value(imm_value) , .jump_target(jump_target));
- ControlUnit controller(.clk(clk) , .op_type(op_type) , .reg_write(reg_write_en) , .mem_write(mem_write_en) ,
- .imm_sel(imm_sel) , .jump_en(jump_en) , .branch_en(branch_en) , .link_en(link_en) , .select_src(select_src) ,
- .reset(reset) , .move_fp_to_cpu(move_fp_to_cpu));
- RegBank register_bank(.dest_reg(dest_reg_addr) , .src_reg1(src1_addr) , .src_reg2(field1) , .clk(clk) , .write_enable(reg_write_en) , .data_in(reg_data_in) , .reset(reset) , .src2_data(src2_data) , .src1_data(src1_data));
+    InstructionParser decoder(.instr(current_instr) , .field1(field1) , .field2(field2) , .field3(field3) , .shift_amt(shift_amt), .opcode(opcode), .op_type(op_type) , .imm_value(imm_value) , .jump_target(jump_target));
+    ControlUnit controller(.clk(clk) , .op_type(op_type) , .reg_write(reg_write_en) , .mem_write(mem_write_en) ,
+    .imm_sel(imm_sel) , .jump_en(jump_en) , .branch_en(branch_en) , .link_en(link_en) , .select_src(select_src) ,
+    .reset(reset) , .move_fp_to_cpu(move_fp_to_cpu));
+    RegBank register_bank(.dest_reg(dest_reg_addr) , .src_reg1(src1_addr) , .src_reg2(field1) , .clk(clk) , .write_enable(reg_write_en) , .data_in(reg_data_in) , .reset(reset) , .src2_data(src2_data) , .src1_data(src1_data));
 
- OperationSelector op_selector(.op_type(op_type) , .opcode(opcode) , .op_select(op_select));
- ArithLogicUnit alu_unit(.val1(src1_data) , .val2(alu_src2_input) , .op_select(op_select) , .clk(clk) , .result(alu_result) , .shift_amount(shift_amt));
- ProgramCounter pc_unit(.clk(clk) , .counter_val(pc_val) , .reset(reset) , .jump_enable(jump_en) , .jump_addr(jump_target) , .branch_enable(branch_en & alu_result[0]) , .branch_offset(imm_value));
+    OperationSelector op_selector(.op_type(op_type) , .opcode(opcode) , .op_select(op_select));
+    ArithLogicUnit alu_unit(.val1(src1_data) , .val2(alu_src2_input) , .op_select(op_select) , .clk(clk) , .result(alu_result) , .shift_amount(shift_amt));
+    ProgramCounter pc_unit(.clk(clk) , .counter_val(pc_val) , .reset(reset) , .jump_enable(jump_en) , .jump_addr(jump_target) , .branch_enable(branch_en & alu_result[0]) , .branch_offset(imm_value));
 
     // FP registers section
     assign fp_reg_data_in = (move_cpu_to_fp)? src2_data : fp_result;
@@ -592,7 +586,7 @@ module ProcessorCore (
     FPRegController fp_controller(.op_type(op_type) , .fp_reg_write(fp_reg_write_en) , .move_cpu_to_fp(move_cpu_to_fp));
 
     FloatingPointUnit fpu(.val1(fp_src1_data), .val2(fp_src2_data), .fp_result(fp_result), 
-                       .op_type(op_type), .condition_flag(cond_flag));
+                        .op_type(op_type), .condition_flag(cond_flag));
 endmodule
 
 module ProcessorTestbench;
